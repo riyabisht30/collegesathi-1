@@ -91,23 +91,50 @@ const COLLEGE_TYPES = [
   { value: 'Autonomous', label: 'Autonomous', desc: 'Self-governing colleges' },
 ];
 
+const INITIAL_ANSWERS: QuestionnaireData = {
+  preferred_states: [],
+  course_level: '',
+  streams: [],
+  budget_max: null,
+  entrance_exams: [],
+  exam_scores: {},
+  college_type: [],
+  preferred_city: null,
+};
+
+/** Keep only exams (and scores) that belong to currently selected streams. */
+function pruneExamsForStreams(
+  streams: string[],
+  entrance_exams: string[],
+  exam_scores: Record<string, number>,
+) {
+  const allowed = new Set(
+    ENTRANCE_EXAMS.filter((e) => streams.length === 0 || streams.includes(e.stream)).map((e) => e.value)
+  );
+  const keptExams = entrance_exams.filter((code) => allowed.has(code));
+  const keptScores: Record<string, number> = {};
+  for (const code of keptExams) {
+    if (exam_scores[code] !== undefined) {
+      keptScores[code] = exam_scores[code];
+    }
+  }
+  return { entrance_exams: keptExams, exam_scores: keptScores };
+}
+
 export default function RecommendPage() {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<QuestionnaireData>({
-    preferred_states: [],
-    course_level: '',
-    streams: [],
-    budget_max: null,
-    entrance_exams: [],
-    exam_scores: {},
-    college_type: [],
-    preferred_city: null,
-  });
+  const [answers, setAnswers] = useState<QuestionnaireData>({ ...INITIAL_ANSWERS });
   const [results, setResults] = useState<College[] | null>(null);
   const [totalMatches, setTotalMatches] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const currentStep = STEPS[step];
+
+  const resetQuiz = () => {
+    setResults(null);
+    setStep(0);
+    setAnswers({ ...INITIAL_ANSWERS });
+  };
 
   const toggleArray = (key: keyof QuestionnaireData, value: string) => {
     const arr = answers[key] as string[];
@@ -118,15 +145,45 @@ export default function RecommendPage() {
     }
   };
 
+  const toggleStream = (stream: string) => {
+    const streams = answers.streams.includes(stream)
+      ? answers.streams.filter((s) => s !== stream)
+      : [...answers.streams, stream];
+    const pruned = pruneExamsForStreams(streams, answers.entrance_exams, answers.exam_scores);
+    setAnswers({ ...answers, streams, ...pruned });
+  };
+
+  const toggleEntranceExam = (examCode: string) => {
+    const isSelected = answers.entrance_exams.includes(examCode);
+    const entrance_exams = isSelected
+      ? answers.entrance_exams.filter((e) => e !== examCode)
+      : [...answers.entrance_exams, examCode];
+    const exam_scores = { ...answers.exam_scores };
+    if (isSelected) {
+      delete exam_scores[examCode];
+    }
+    setAnswers({ ...answers, entrance_exams, exam_scores });
+  };
+
   const relevantExams = ENTRANCE_EXAMS.filter(
     (exam) => answers.streams.length === 0 || answers.streams.includes(exam.stream)
+  );
+
+  const examsNeedingScores = answers.entrance_exams.filter((code) =>
+    relevantExams.some((e) => e.value === code)
   );
 
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      const pruned = pruneExamsForStreams(
+        answers.streams,
+        answers.entrance_exams,
+        answers.exam_scores,
+      );
       const { data } = await api.post('/recommend', {
         ...answers,
+        ...pruned,
         budget_max: answers.budget_max || undefined,
       });
       setResults(data.colleges);
@@ -164,7 +221,7 @@ export default function RecommendPage() {
               </p>
             </div>
             <button
-              onClick={() => { setResults(null); setStep(0); }}
+              onClick={resetQuiz}
               className="btn-secondary"
             >
               ← Retake Quiz
@@ -177,7 +234,7 @@ export default function RecommendPage() {
             <div className="text-4xl mb-4">😔</div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No exact matches found</h3>
             <p className="text-muted mb-4">Try widening your criteria - maybe increase budget or add more states</p>
-            <button onClick={() => { setResults(null); setStep(0); }} className="btn-primary">
+            <button onClick={resetQuiz} className="btn-primary">
               Try Again
             </button>
           </div>
@@ -251,7 +308,7 @@ export default function RecommendPage() {
               {STREAMS.map((stream) => (
                 <button
                   key={stream.value}
-                  onClick={() => toggleArray('streams', stream.value)}
+                  onClick={() => toggleStream(stream.value)}
                   className={`text-left p-4 rounded-xl border-2 transition-all ${
                     answers.streams.includes(stream.value)
                       ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
@@ -279,7 +336,7 @@ export default function RecommendPage() {
                   <input
                     type="checkbox"
                     checked={answers.entrance_exams.includes(exam.value)}
-                    onChange={() => toggleArray('entrance_exams', exam.value)}
+                    onChange={() => toggleEntranceExam(exam.value)}
                     className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 w-5 h-5"
                   />
                   <span className="font-medium text-gray-800 dark:text-gray-200">{exam.label}</span>
@@ -291,12 +348,12 @@ export default function RecommendPage() {
 
           {currentStep.id === 'exam_scores' && (
             <div className="space-y-4">
-              {answers.entrance_exams.length === 0 ? (
+              {examsNeedingScores.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center py-8">
                   No exams selected. You can skip this step.
                 </p>
               ) : (
-                answers.entrance_exams.map((examCode) => {
+                examsNeedingScores.map((examCode) => {
                   const exam = ENTRANCE_EXAMS.find((e) => e.value === examCode);
                   const scoreLabel = exam?.scoreType === 'rank' ? 'Rank' : 
                                      exam?.scoreType === 'percentile' ? 'Percentile' : 'Score';
