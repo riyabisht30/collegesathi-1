@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuthStore, useThemeStore } from '@/lib/store';
+import { syncWishlistFromServer, clearWishlistState } from '@/lib/wishlist';
 import AuthModal from './AuthModal';
 
 export default function Navbar() {
@@ -16,6 +17,19 @@ export default function Navbar() {
     loadTheme();
     setMounted(true);
   }, [loadFromStorage, loadTheme]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      syncWishlistFromServer();
+    } else {
+      clearWishlistState();
+    }
+  }, [isAuthenticated]);
+
+  const handleLogout = () => {
+    logout();
+    clearWishlistState();
+  };
 
   if (!mounted) return null;
 
@@ -74,7 +88,7 @@ export default function Navbar() {
                     Hi, {user?.name || user?.email?.split('@')[0] || 'Student'}
                   </span>
                   <button
-                    onClick={logout}
+                    onClick={handleLogout}
                     className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 font-medium transition-colors"
                   >
                     Logout

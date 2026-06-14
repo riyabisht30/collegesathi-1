@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuthStore } from '@/lib/store';
+import { syncWishlistFromServer } from '@/lib/wishlist';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -42,6 +43,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
 
       const { data } = await api.post(endpoint, payload);
       setAuth(data.user, data.access_token);
+      await syncWishlistFromServer();
       toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!');
       onClose();
     } catch (err: any) {

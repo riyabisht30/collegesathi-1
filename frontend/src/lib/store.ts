@@ -51,7 +51,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('collegesathi_user');
     set({ user: null, token: null, isAuthenticated: false });
   },
-  
   loadFromStorage: () => {
     if (typeof window === 'undefined') return;
     const token = localStorage.getItem('collegesathi_token');
