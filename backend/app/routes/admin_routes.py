@@ -76,47 +76,57 @@ def _send_otp_email(to_email: str, otp: str) -> bool:
 @router.post("/login")
 def admin_login(data: AdminLoginRequest):
     """Step 1: Verify admin email + password, then send OTP via email."""
-    if data.email != settings.ADMIN_EMAIL:
+    email = data.email.strip().lower()
+    admin_email = settings.ADMIN_EMAIL.strip().lower()
+
+    if email != admin_email:
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    
+
     password_hash = hashlib.sha256(data.password.encode()).hexdigest()
     if password_hash != _admin_password_hash():
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    
+
     # Generate OTP
     otp = str(random.randint(100000, 999999))
-    _otp_store[data.email] = {"otp": otp, "expires": time.time() + 300}  # 5 min expiry
-    
+    _otp_store[admin_email] = {"otp": otp, "expires": time.time() + 300}  # 5 min expiry
+
     # Send OTP via email
-    email_sent = _send_otp_email(data.email, otp)
-    
+    email_sent = _send_otp_email(settings.ADMIN_EMAIL, otp)
+
     if email_sent:
-        return {"message": "OTP sent to your email address"}
+        return {"message": "OTP sent to your email address", "email": admin_email}
     else:
         # Fallback: if email fails, still allow (show in console for dev)
-        print(f"\n🔐 Admin OTP for {data.email}: {otp}\n")
-        return {"message": "OTP generated (check server console if email delivery failed)", "otp_hint": otp}
+        print(f"\n🔐 Admin OTP for {settings.ADMIN_EMAIL}: {otp}\n")
+        return {
+            "message": "OTP generated (email delivery failed — use fallback code below)",
+            "email": admin_email,
+            "otp_hint": otp,
+        }
 
 
 @router.post("/verify-otp")
 def admin_verify_otp(data: AdminOTPVerifyRequest):
     """Step 2: Verify OTP and return admin token."""
-    if data.email != settings.ADMIN_EMAIL:
+    email = data.email.strip().lower()
+    admin_email = settings.ADMIN_EMAIL.strip().lower()
+
+    if email != admin_email:
         raise HTTPException(status_code=401, detail="Invalid admin email")
-    
-    stored = _otp_store.get(data.email)
+
+    stored = _otp_store.get(admin_email)
     if not stored:
         raise HTTPException(status_code=401, detail="No OTP found. Please login again.")
-    
+
     if time.time() > stored["expires"]:
-        del _otp_store[data.email]
+        del _otp_store[admin_email]
         raise HTTPException(status_code=401, detail="OTP expired. Please login again.")
-    
-    if data.otp != stored["otp"]:
+
+    if data.otp.strip() != stored["otp"]:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-    
+
     # Clear OTP
-    del _otp_store[data.email]
+    del _otp_store[admin_email]
     
     # Create admin token
     token = create_access_token({"sub": 0, "role": "admin", "email": settings.ADMIN_EMAIL})

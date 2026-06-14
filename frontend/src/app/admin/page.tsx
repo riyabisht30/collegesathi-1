@@ -55,6 +55,7 @@ export default function AdminPage() {
   const [otp, setOtp] = useState('');
   const [otpHint, setOtpHint] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   const [tab, setTab] = useState<Tab>('overview');
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -107,13 +108,23 @@ export default function AdminPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
+    setAuthError('');
     try {
-      const { data } = await api.post('/admin/login', { email, password });
+      const { data } = await api.post('/admin/login', {
+        email: email.trim(),
+        password,
+      });
       setOtpHint(data.otp_hint || '');
       setAuthStep('otp');
-      toast.success('OTP sent to your email!');
+      toast.success(data.otp_hint ? 'Use the fallback OTP shown below' : 'OTP sent to your email!');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Invalid credentials');
+      const detail = err.response?.data?.detail;
+      const message = detail
+        || (err.code === 'ECONNABORTED' ? 'Server is waking up — wait a moment and try again.' : null)
+        || err.message
+        || 'Login failed. Check email and password match Render env vars (ADMIN_EMAIL / ADMIN_PASSWORD).';
+      setAuthError(message);
+      toast.error(message);
     } finally {
       setAuthLoading(false);
     }
@@ -122,13 +133,16 @@ export default function AdminPage() {
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
+    setAuthError('');
     try {
-      const { data } = await api.post('/admin/verify-otp', { email, otp });
+      const { data } = await api.post('/admin/verify-otp', { email: email.trim(), otp });
       sessionStorage.setItem('collegesathi_admin_token', data.access_token);
       setAuthStep('authenticated');
       toast.success('Admin access granted!');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Invalid OTP');
+      const message = err.response?.data?.detail || 'Invalid OTP';
+      setAuthError(message);
+      toast.error(message);
     } finally {
       setAuthLoading(false);
     }
@@ -159,8 +173,14 @@ export default function AdminPage() {
                 </svg>
               </div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Admin Access</h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">This area is restricted to authorized administrators only.</p>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">Step 1 of 2 — enter credentials, then verify OTP from email.</p>
             </div>
+
+            {authError && (
+              <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+                {authError}
+              </div>
+            )}
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
@@ -190,8 +210,11 @@ export default function AdminPage() {
                 disabled={authLoading}
                 className="w-full btn-primary disabled:opacity-50"
               >
-                {authLoading ? 'Verifying...' : 'Login & Send OTP'}
+                {authLoading ? 'Connecting to server…' : 'Login & Send OTP'}
               </button>
+              <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+                First request may take up to 60 seconds while the server wakes up.
+              </p>
             </form>
           </div>
         </div>
@@ -211,14 +234,22 @@ export default function AdminPage() {
                 </svg>
               </div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Verify OTP</h1>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">Enter the 6-digit code sent to your email.</p>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">
+                Step 2 of 2 — enter the 6-digit code sent to <strong>{email.trim()}</strong>.
+              </p>
               {otpHint && (
                 <p className="mt-3 px-4 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-400 text-sm">
-                  Fallback OTP: <span className="font-mono font-bold">{otpHint}</span>
-                  <br/><span className="text-xs">(Email delivery failed - using console fallback)</span>
+                  Your OTP: <span className="font-mono font-bold text-lg">{otpHint}</span>
+                  <br/><span className="text-xs">(Email could not be sent — set SMTP_PASSWORD on Render)</span>
                 </p>
               )}
             </div>
+
+            {authError && (
+              <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+                {authError}
+              </div>
+            )}
 
             <form onSubmit={handleVerifyOTP} className="space-y-4">
               <div>
@@ -242,7 +273,7 @@ export default function AdminPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setAuthStep('login')}
+                onClick={() => { setAuthStep('login'); setAuthError(''); setOtp(''); }}
                 className="w-full text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
               >
                 ← Back to login
